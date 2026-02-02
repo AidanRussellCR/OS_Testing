@@ -47,7 +47,7 @@ static void terminal_write(const char* s) {
 void kmain(void) {
 	terminal_clear();
 	terminal_write("Hello World!\n");
-	terminal_write("This is a tiny kernel terminal.\n");
+	terminal_write("This is a working kernel terminal with text output.\n");
 
 	for (;;) {
 		__asm__ volatile ("hlt");
