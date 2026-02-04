@@ -15,11 +15,14 @@ all: $(ISO)
 boot.o: boot.s
 	$(AS) -f elf32 boot.s -o boot.o
 
+ctx_switch.o: ctx_switch.asm
+	$(AS) -f elf32 ctx_switch.asm -o ctx_switch.o
+
 kernel.o: kernel.c
 	$(CC) $(CFLAGS) -m32 -c kernel.c -o kernel.o
 
-$(KERNEL): boot.o kernel.o linker.ld
-	$(LD) -m elf_i386 $(LDFLAGS) boot.o kernel.o -o $(KERNEL)
+$(KERNEL): boot.o kernel.o ctx_switch.o linker.ld
+	$(LD) -m elf_i386 $(LDFLAGS) boot.o kernel.o ctx_switch.o -o $(KERNEL)
 
 $(ISO): $(KERNEL) grub.cfg
 	rm -rf $(ISO_DIR)
