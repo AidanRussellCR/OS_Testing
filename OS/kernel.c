@@ -45,6 +45,22 @@ static size_t term_row = 0;
 static size_t term_col = 0;
 static uint8_t term_color = 0x0F;
 
+// Cursor Movement
+typedef enum {
+	KEY_NONE = 0,
+	KEY_CHAR,
+	KEY_ENTER,
+	KEY_BACKSPACE,
+	KEY_LEFT,
+	KEY_RIGHT,
+	KEY_DELETE
+} key_type_t;
+
+typedef struct {
+	key_type_t type;
+	char ch; // valid if type == KEY_CHAR
+} key_event_t;
+
 //Prototypes
 static void prompt(void);
 static void read_line(char* out, size_t out_cap);
@@ -61,6 +77,9 @@ static void terminal_putc_at(size_t row, size_t col, char c);
 static void overlay_clear_line(size_t row);
 static void debug_hud_mark_dirty(void);
 static int hb_instance_index(const char* hb_name, int my_id);
+static void vga_cursor_enable(void);
+static void vga_cursor_set_pos(size_t row, size_t col);
+static void vga_cursor_hide(void);
 
 
 static inline uint16_t vga_entry(char c, uint8_t color) {
@@ -132,6 +151,8 @@ static void terminal_newline(void) {
 	} else {
 		term_row++;
 	}
+	
+	vga_cursor_set_pos(term_row, term_col);
 }
 
 static void terminal_putc(char c) {
@@ -145,6 +166,8 @@ static void terminal_putc(char c) {
 	if (++term_col >= VGA_WIDTH) {
 		terminal_newline();
 	}
+	
+	vga_cursor_set_pos(term_row, term_col);
 }
 
 static void terminal_putc_at(size_t row, size_t col, char c) {
@@ -162,17 +185,6 @@ static void terminal_write_at(size_t row, size_t col, const char* s) {
 	for (size_t i = 0; s[i] != '\0' && (col + i) < VGA_WIDTH; i++) {
 		terminal_putc_at(row, col + i, s[i]);
 	}
-}
-
-static void terminal_backspace(void) {
-	if (term_col == 0) {
-		if (term_row == 0) return;
-		term_row--;
-		term_col = VGA_WIDTH - 1;
-	} else {
-		term_col--;
-	}
-	VGA_MEMORY[term_row * VGA_WIDTH + term_col] = vga_entry(' ', term_color);
 }
 
 // ---------------I/O--------------- //
@@ -221,6 +233,30 @@ static int parse_u32(const char* s, uint32_t* out) {
 	return 1;
 }
 
+static void vga_cursor_enable(void) {
+	// Standard cursor
+	outb(0x3D4, 0x0A);
+	outb(0x3D5, (inb(0x3D5) & 0xC0) | 0);	// start scanline
+	outb(0x3D4, 0x0B);
+	outb(0x3D5, (inb(0x3D5) & 0xE0) | 15);	// end scanline
+}
+
+static void vga_cursor_hide(void) {
+	outb(0x3D4, 0x0A);
+	outb(0x3D5, 0x20); // disable cursor
+}
+
+static void vga_cursor_set_pos(size_t row, size_t col) {
+	if (row >= VGA_HEIGHT) row = VGA_HEIGHT - 1;
+	if (col >= VGA_WIDTH)  col = VGA_WIDTH - 1;
+
+	uint16_t pos = (uint16_t)(row * VGA_WIDTH + col);
+	outb(0x3D4, 0x0F);
+	outb(0x3D5, (uint8_t)(pos & 0xFF));
+	outb(0x3D4, 0x0E);
+	outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+}
+
 // ----------Keyboard scanning----------- //
 
 static const char scancode_to_ascii[128] = {
@@ -247,27 +283,47 @@ static const char scancode_to_ascii_shift[128] = {
 
 static int shift_down = 0;
 
-static int keyboard_try_get_char(char* out_char) {
-	// If no controller output, no key available
-	if ((inb(0x64) & 0x01) == 0) return 0;
+static int keyboard_try_get_key(key_event_t* ev) {
+	static int e0 = 0;
 
+	if ((inb(0x64) & 0x01) == 0) return 0;
 	uint8_t sc = inb(0x60);
+
+	if (sc == 0xE0) { e0 = 1; return 0; }
 
 	int released = (sc & 0x80) != 0;
 	uint8_t code = sc & 0x7F;
 
-	// Shift handling
-	if (code == 0x2A || code == 0x36) {
+	// shift
+	if (!e0 && (code == 0x2A || code == 0x36)) {
 		shift_down = released ? 0 : 1;
 		return 0;
 	}
 
-	if (released) return 0;
+	if (released) { e0 = 0; return 0; }
 
+	// extended keys
+	if (e0) {
+		e0 = 0;
+		switch (code) {
+			case 0x4B: ev->type = KEY_LEFT;  return 1;
+			case 0x4D: ev->type = KEY_RIGHT; return 1;
+			case 0x53: ev->type = KEY_DELETE; return 1;
+			default: return 0;
+		}
+	}
+
+	// normal keys
 	char c = shift_down ? scancode_to_ascii_shift[code] : scancode_to_ascii[code];
-	if (c == 0) return 0;
+	if (!c) return 0;
 
-	*out_char = c;
+	if (c == '\n') { ev->type = KEY_ENTER; return 1; }
+	if (c == '\b') { ev->type = KEY_BACKSPACE; return 1; }
+
+	if ((unsigned char)c < 32 || (unsigned char)c > 126) return 0;
+
+	ev->type = KEY_CHAR;
+	ev->ch = c;
 	return 1;
 }
 
@@ -599,45 +655,77 @@ static void task_heartbeat1(void) {
 
 static void prompt(void) {
 	terminal_write("> ");
+	vga_cursor_set_pos(term_row, term_col);
 }
 
 static void read_line(char* out, size_t out_cap) {
 	size_t len = 0;
+	size_t cur = 0;
+
+	// Editable area starts right after "> "
+	size_t input_row = term_row;
+	size_t input_col = term_col;
+
+	out[0] = '\0';
+	vga_cursor_set_pos(input_row, input_col);
 
 	for (;;) {
-		char c;
+		key_event_t ev;
 
-		// Yield so other tasks run if no key yet
-		if (!keyboard_try_get_char(&c)) {
+		if (!keyboard_try_get_key(&ev)) {
 			yield();
 			continue;
 		}
 
-		// Enter
-		if (c == '\n') {
-			terminal_putc('\n');
+		if (ev.type == KEY_ENTER) {
 			out[len] = '\0';
+
+			term_row = input_row;
+			term_col = input_col + len;
+
+			terminal_putc('\n');
 			return;
 		}
 
-		// Backspace
-		if (c == '\b') {
-			if (len > 0) {
+		if (ev.type == KEY_LEFT) {
+			if (cur > 0) cur--;
+		} else if (ev.type == KEY_RIGHT) {
+			if (cur < len) cur++;
+		} else if (ev.type == KEY_BACKSPACE) {
+			if (cur > 0) {
+				// delete char before cursor
+				for (size_t i = cur - 1; i < len; i++) out[i] = out[i + 1];
+				cur--;
 				len--;
-				terminal_backspace();
 			}
-			continue;
+		} else if (ev.type == KEY_DELETE) {
+			if (cur < len) {
+				for (size_t i = cur; i < len; i++) out[i] = out[i + 1];
+				len--;
+			}
+		} else if (ev.type == KEY_CHAR) {
+			if (len + 1 < out_cap) {
+				// insert at cursor, shift right
+				for (size_t i = len; i > cur; i--) out[i] = out[i - 1];
+				out[cur] = ev.ch;
+				cur++;
+				len++;
+				out[len] = '\0';
+			}
 		}
 
-		// Printable filter
-		if ((unsigned char)c < 32 || (unsigned char)c > 126) {
-			continue;
+		// Redraw the line
+			// write buffer
+		for (size_t i = 0; i < len; i++) {
+			terminal_putc_at(input_row, input_col + i, out[i]);
+		}
+			// clear leftover chars from previous longer line
+		for (size_t i = len; i < out_cap - 1 && (input_col + i) < VGA_WIDTH; i++) {
+			terminal_putc_at(input_row, input_col + i, ' ');
 		}
 
-		if (len + 1 < out_cap) {
-			out[len++] = c;
-			terminal_putc(c);
-		}
+		// Place hardware cursor
+		vga_cursor_set_pos(input_row, input_col + cur);
 	}
 }
 
@@ -648,6 +736,10 @@ void kmain(void) {
 	terminal_write("Hello World!\n");
 	terminal_write("Current kernel features:\n");
 	terminal_write(" - Echo user input\n - Shut down system\n - Tasking/Scheduling\n\n");
+
+	vga_cursor_hide();
+	vga_cursor_enable();
+	vga_cursor_set_pos(term_row, term_col);
 
 	terminal_write("Kernel starting tasks...\n");
 	// "yield" is keyword for manual switching
