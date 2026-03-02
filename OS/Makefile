@@ -3,26 +3,30 @@ CC := $(PREFIX)/bin/i686-elf-gcc
 LD := $(PREFIX)/bin/i686-elf-ld
 AS := nasm
 
-CFLAGS := -std=c11 -ffreestanding -O2 -Wall -Wextra
+CFLAGS := -std=c11 -ffreestanding -O2 -Wall -Wextra -m32 -Iinc
 LDFLAGS := -T linker.ld -nostdlib
 
 ISO_DIR := isodir
 KERNEL := kernel.elf
-ISO := helloworld_os.iso
+ISO := os.iso
+
+C_SOURCES := $(shell find src -name '*.c')
+ASM_SOURCES := $(shell find src -name '*.asm')
+OBJS := $(C_SOURCES:.c=.o) $(ASM_SOURCES:.asm=.o)
 
 all: $(ISO)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+%.o: %.asm
+	$(AS) -f elf32 $< -o $@
 
 boot.o: boot.s
 	$(AS) -f elf32 boot.s -o boot.o
 
-ctx_switch.o: ctx_switch.asm
-	$(AS) -f elf32 ctx_switch.asm -o ctx_switch.o
-
-kernel.o: kernel.c
-	$(CC) $(CFLAGS) -m32 -c kernel.c -o kernel.o
-
-$(KERNEL): boot.o kernel.o ctx_switch.o linker.ld
-	$(LD) -m elf_i386 $(LDFLAGS) boot.o kernel.o ctx_switch.o -o $(KERNEL)
+$(KERNEL): boot.o $(OBJS) linker.ld
+	$(LD) -m elf_i386 $(LDFLAGS) boot.o $(OBJS) -o $(KERNEL)
 
 $(ISO): $(KERNEL) grub.cfg
 	rm -rf $(ISO_DIR)
@@ -35,6 +39,6 @@ run: $(ISO)
 	qemu-system-i386 -cdrom $(ISO)
 
 clean:
-	rm -rf $(ISO_DIR) *.o *.elf *.iso
+	rm -rf $(ISO_DIR) boot.o $(KERNEL) $(ISO) $(shell find src -name '*.o')
 
 .PHONY: all clean run
