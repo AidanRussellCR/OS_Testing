@@ -32,19 +32,20 @@ void debug_hud_draw(void) {
 
 	terminal_write_at(start_row + 0, start_col, "Tasks");
 
-	task_t* tasks = task_table();
+
 
 	size_t line = 1;
 	for (int i = 0; i < MAX_TASKS && line < hud_h; i++) {
-		if (tasks[i].state == TASK_DEAD) continue;
+		task_t* t = task_at(i);
+		if (!t) continue;
 
 		terminal_putc_at(start_row + line, start_col + 0, '#');
 		terminal_putc_at(start_row + line, start_col + 1, '0' + (i % 10));
 		terminal_putc_at(start_row + line, start_col + 2, ' ');
-		terminal_putc_at(start_row + line, start_col + 3, task_state_char(tasks[i].state));
+		terminal_putc_at(start_row + line, start_col + 3, task_state_char(t->state));
 		terminal_putc_at(start_row + line, start_col + 4, ' ');
 
-		const char* nm = tasks[i].name ? tasks[i].name : "?";
+		const char* nm = t->name ? t->name : "?";
 		size_t col = start_col + 5;
 		for (size_t k = 0; nm[k] && col < VGA_WIDTH; k++, col++) {
 			terminal_putc_at(start_row + line, col, nm[k]);
@@ -96,3 +97,4 @@ void task_heartbeat1(void) {
 		task_delay(1100000);
 	}
 }
+
