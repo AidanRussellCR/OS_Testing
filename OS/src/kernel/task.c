@@ -3,12 +3,12 @@
 #include "kernel/task.h"
 #include "kernel/sched.h"
 #include "drivers/vga.h"
-#include "ui/overlays.h"
 #include "lib/str.h"
 #include "mm/heap.h"
+#include "ui/overlays.h"
 
 
-#define KSTACK_SIZE 4096
+#define KSTACK_SIZE 16384
 
 static task_t* g_tasks[MAX_TASKS];
 static int g_current = -1;
@@ -32,7 +32,6 @@ static int alloc_slot(void) {
 void task_init(void) {
 	for (int i = 0; i < MAX_TASKS; i++) g_tasks[i] = 0;
 	g_current = -1;
-	debug_hud_mark_dirty();
 }
 
 static void build_initial_context(task_t* t) {
@@ -78,7 +77,6 @@ int task_create(void (*entry)(void), const char* name) {
 
 	g_tasks[id] = t;
 
-	debug_hud_mark_dirty();
 	return id;
 }
 
@@ -86,14 +84,7 @@ static void cleanup_task_slot(int id) {
 	task_t* t = g_tasks[id];
 	if (!t) return;
 
-	if (t->name && streq(t->name, "heartbeat0")) {
-		int idx = hb_instance_index("heartbeat0", id);
-		if (idx >= 0 && idx < HB_MAX_LINES) overlay_clear_line(HB0_ROW_BASE + (size_t)idx);
-	}
-	if (t->name && streq(t->name, "heartbeat1")) {
-		int idx = hb_instance_index("heartbeat1", id);
-		if (idx >= 0 && idx < HB_MAX_LINES) overlay_clear_line(HB1_ROW_BASE + (size_t)idx);
-	}
+	overlays_hb_remove(id);
 
 	kfree(t->kstack_base);
 	kfree(t);
@@ -102,11 +93,16 @@ static void cleanup_task_slot(int id) {
 
 int task_kill(int id) {
 	if (id < 0 || id >= MAX_TASKS) return 0;
-	if (g_tasks[id] == 0) return 0;
+	task_t* t = g_tasks[id];
+	if (!t) return 0;
+
+	// never kill current task from shell
 	if (id == g_current) return 0;
 
-	cleanup_task_slot(id);
-	debug_hud_mark_dirty();
+	// cannot kill shell or wraith tasks
+	if (t->name && (streq(t->name, "shell") || streq(t->name, "wraith"))) return 0;
+
+	t->state = TASK_ZOMBIE;
 	return 1;
 }
 
@@ -137,7 +133,21 @@ void task_print_to_console(void) {
 		task_t* t = g_tasks[i];
 		if (!t) continue;
 
-		terminal_putc('0' + (i % 10));
+		// print ID
+		char tmp[12];
+		int p = 0;
+		uint32_t v = (uint32_t)i;
+
+		if (v == 0) tmp[p++] = '0';
+		else {
+			char r[12];
+			int rp = 0;
+			while (v > 0 && rp < 11) { r[rp++] = (char)('0' + (v % 10)); v /= 10; }
+			while (rp > 0) tmp[p++] = r[--rp];
+		}
+		tmp[p] = '\0';
+
+		terminal_write(tmp);
 		terminal_write("  ");
 		terminal_putc(task_state_char(t->state));
 		terminal_write("     ");
@@ -163,6 +173,28 @@ void task_delay(volatile uint32_t loops) {
 	for (volatile uint32_t i = 0; i < loops; i++) {
 		__asm__ volatile ("pause");
 		if ((i & 0x3FFF) == 0) yield();
+	}
+}
+
+void task_wraith(void) {
+	for (;;) {
+		// reap zombies
+		for (int i = 0; i < MAX_TASKS; i++) {
+			task_t* t = g_tasks[i];
+			if (!t) continue;
+			if (t->state != TASK_ZOMBIE) continue;
+
+			// don't reap shell or wraith by mistake
+			if (t->name && (streq(t->name, "shell") || streq(t->name, "wraith"))) {
+				t->state = TASK_READY;
+				continue;
+			}
+
+			cleanup_task_slot(i);
+		}
+
+		// wait
+		task_delay(200000);
 	}
 }
 

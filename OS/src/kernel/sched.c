@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include "kernel/sched.h"
 #include "kernel/task.h"
-#include "ui/overlays.h"
 #include "arsc/i386/ctx_switch.h"
 
 void _task_internal_set_current(int id);
@@ -29,23 +28,18 @@ void schedule(void) {
 	if (next == -1) {
 		if (prev_t) {
 			prev_t->state = TASK_RUNNING;
-			debug_hud_draw();
 			return;
 		}
-		debug_hud_draw();
 		return;
 	}
 
 	task_t* next_t = _task_internal_get(next);
 	if (!next_t) {
-		debug_hud_draw();
 		return;
 	}
 
 	_task_internal_set_current(next);
 	next_t->state = TASK_RUNNING;
-
-	debug_hud_draw();
 
 	if (prev == -1) {
 		uint32_t dummy = 0;

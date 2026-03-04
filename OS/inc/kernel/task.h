@@ -5,7 +5,8 @@ typedef enum {
 	TASK_DEAD = 0,
 	TASK_READY,
 	TASK_RUNNING,
-	TASK_BLOCKED
+	TASK_BLOCKED,
+	TASK_ZOMBIE
 } task_state_t;
 
 typedef struct task {
@@ -26,6 +27,7 @@ int task_kill(int id);
 int task_current_id(void);
 task_t* task_at(int id);
 
+void task_wraith(void); // task reaper
 void task_exit(void) __attribute__((noreturn));
 void task_delay(volatile uint32_t loops);
 

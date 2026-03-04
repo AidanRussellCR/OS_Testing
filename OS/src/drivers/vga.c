@@ -17,6 +17,10 @@ size_t terminal_get_row(void) { return term_row; }
 size_t terminal_get_col(void) { return term_col; }
 
 void terminal_set_cursor_pos(size_t row, size_t col) {
+	// avoid placing cursor in overlay
+	if (row >= TERM_HEIGHT) row = TERM_HEIGHT - 1;
+	if (col >= VGA_WIDTH) col = VGA_WIDTH - 1;
+
 	term_row = row;
 	term_col = col;
 	vga_cursor_set_pos(term_row, term_col);

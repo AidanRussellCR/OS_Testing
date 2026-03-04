@@ -4,7 +4,9 @@
 
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
-#define TERM_HEIGHT (VGA_HEIGHT - 1)
+#define TERM_HEIGHT (VGA_HEIGHT - 2)
+#define OVERLAY_ROW0 (VGA_HEIGHT - 2)
+#define OVERLAY_ROW1 (VGA_HEIGHT - 1)
 
 void terminal_init(void);
 void terminal_clear(void);
@@ -19,7 +21,7 @@ size_t terminal_get_row(void);
 size_t terminal_get_col(void);
 void terminal_set_cursor_pos(size_t row, size_t col);
 
-/* VGA hardware cursor */
+// VGA hardware cursor
 void vga_cursor_enable(void);
 void vga_cursor_hide(void);
 void vga_cursor_set_pos(size_t row, size_t col);
