@@ -8,6 +8,10 @@ typedef enum {
 	KEY_BACKSPACE,
 	KEY_LEFT,
 	KEY_RIGHT,
+	KEY_UP,
+	KEY_DOWN,
+	KEY_PAGEUP,
+	KEY_PAGEDOWN,
 	KEY_DELETE
 } key_type_t;
 

@@ -7,13 +7,14 @@
 
 #define VFS_LBA_BASE 2048u
 #define VFS_MAGIC 0x50534631u
-#define VFS_VERSION 1u
+#define VFS_VERSION 2u
 
 typedef enum { NODE_DIR = 1, NODE_FILE = 2 } node_type_t;
 
 typedef struct vfs_node {
 	node_type_t type;
 	char name[32];
+	uint8_t flags; // identify learned/executable spell
 	struct vfs_node* parent;
 	struct vfs_node* sibling_next;
 	struct vfs_node* child_head;
@@ -37,6 +38,13 @@ static int name_valid(const char* s) {
 		if (c == '/' || c == '\\' || c == ':' || c == ' ') return 0;
 	}
 	return 1;
+}
+
+// check if file is .ms (magic spell/script file)
+static int has_ms_extension(const char* name) {
+	size_t n = kstrlen(name);
+	if (n < 3) return 0;
+	return name[n - 3] == '.' && name[n - 2] == 'm' && name[n - 1] == 's';
 }
 
 static vfs_node_t* node_alloc(node_type_t t, const char* name, vfs_node_t* parent) {
@@ -67,6 +75,13 @@ static vfs_node_t* find_child(vfs_node_t* dir, const char* name) {
 		if (streq(c->name, name)) return c;
 	}
 	return 0;
+}
+
+static vfs_node_t* find_base_dir(void) {
+	if (!g_root) return 0;
+	vfs_node_t* root = find_child(g_root, "root");
+	if (!root) return 0;
+	return find_child(root, "base");
 }
 
 static vfs_status_t remove_child(vfs_node_t* dir, vfs_node_t* target) {
@@ -250,6 +265,7 @@ typedef struct __attribute__((packed)) {
 
 typedef struct __attribute__((packed)) {
 	uint8_t type;
+	uint8_t flags;
 	char name[32];
 	int32_t parent;
 	int32_t first_child;
@@ -345,6 +361,7 @@ vfs_status_t vfs_save(void) {
 			vfs_disk_node_t dn;
 			kmemset(&dn, 0, sizeof(dn));
 			dn.type = (uint8_t)mn->type;
+			dn.flags = mn->flags;
 
 			kmemset(dn.name, 0, sizeof(dn.name));
 			for (int k = 0; k < 31; k++) dn.name[k] = mn->name[k];
@@ -472,6 +489,7 @@ vfs_status_t vfs_load(void) {
 		kmemset(n, 0, sizeof(vfs_node_t));
 
 		n->type = (node_type_t)dn.type;
+		n->flags = dn.flags;
 		
 		if (n->type != NODE_DIR && n->type != NODE_FILE) {
 			// bad image
@@ -509,7 +527,8 @@ vfs_status_t vfs_load(void) {
 	}
 
 	g_root = nodes[sb.root_index < sb.node_count ? sb.root_index : 0];
-	g_cwd  = nodes[sb.cwd_index  < sb.node_count ? sb.cwd_index  : 0];
+	g_cwd = find_base_dir();
+	if (!g_cwd) g_cwd = g_root;
 
 	kfree(nodes);
 	vfs_mark_clean();
@@ -527,5 +546,46 @@ void vfs_shop(vfs_list_cb_t cb, void* user) {
 		int is_dir = (n->type == NODE_DIR) ? 1 : 0;
 		cb(n->name, is_dir, user);
 	}
+}
+
+void vfs_grimoire(vfs_spell_cb_t cb, void* user) {
+	if (!cb || !g_cwd) return;
+
+	int guard = 0;
+	for (vfs_node_t* n = g_cwd->child_head; n; n = n->sibling_next) {
+		if (++guard > 1024) break;
+
+		if (n->type != NODE_FILE) continue;
+		n->name[31] = '\0';
+
+		if (!has_ms_extension(n->name)) continue;
+		if ((n->flags & 0x01) == 0) continue;
+
+		cb(n->name, user);
+	}
+}
+
+vfs_status_t vfs_learn(const char* filename) {
+	if (!g_cwd) return VFS_ERR_NOT_FOUND;
+	vfs_node_t* f = find_child(g_cwd, filename);
+	if (!f) return VFS_ERR_NOT_FOUND;
+	if (f->type != NODE_FILE) return VFS_ERR_IS_DIR;
+	if (!has_ms_extension(filename)) return VFS_ERR_NAME_INVALID;
+
+	f->flags |= 0x01;
+	vfs_mark_dirty();
+	return VFS_OK;
+}
+
+vfs_status_t vfs_is_learned(const char* filename, int* out_learned) {
+	if (out_learned) *out_learned = 0;
+	if (!g_cwd) return VFS_ERR_NOT_FOUND;
+	vfs_node_t* f = find_child(g_cwd, filename);
+	if (!f) return VFS_ERR_NOT_FOUND;
+	if (f->type != NODE_FILE) return VFS_ERR_IS_DIR;
+	if (!has_ms_extension(filename)) return VFS_ERR_NAME_INVALID;
+
+	if (out_learned) *out_learned = (f->flags & 0x01) ? 1 : 0;
+	return VFS_OK;
 }
 

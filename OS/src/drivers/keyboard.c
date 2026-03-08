@@ -47,9 +47,13 @@ int keyboard_try_get_key(key_event_t* ev) {
 	if (e0) {
 		e0 = 0;
 		switch (code) {
-			case 0x4B: ev->type = KEY_LEFT;  return 1;
-			case 0x4D: ev->type = KEY_RIGHT; return 1;
-			case 0x53: ev->type = KEY_DELETE; return 1;
+			case 0x48: ev->type = KEY_UP;		return 1;
+			case 0x50: ev->type = KEY_DOWN; 	return 1;
+			case 0x49: ev->type = KEY_PAGEUP; 	return 1;
+			case 0x51: ev->type = KEY_PAGEDOWN; 	return 1;
+			case 0x4B: ev->type = KEY_LEFT; 	return 1;
+			case 0x4D: ev->type = KEY_RIGHT; 	return 1;
+			case 0x53: ev->type = KEY_DELETE; 	return 1;
 			default: return 0;
 		}
 	}

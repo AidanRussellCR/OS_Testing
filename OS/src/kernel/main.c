@@ -9,9 +9,9 @@
 
 void kmain(void) {
 	terminal_init();
-	terminal_write("Hello World!\n");
-	terminal_write("Current kernel features:\n");
-	terminal_write(" - Echo user input\n - Shut down system\n - Tasking/Scheduling\n - File System\n\n");
+	terminal_write("Welcome to the land of Myrkthrima!\n");
+	terminal_write("  Also known as AidanOS.\n");
+	terminal_write("use 'help' for a list of commands.\n---------------\n\n");
 
 	vga_cursor_hide();
 	vga_cursor_enable();

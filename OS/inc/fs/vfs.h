@@ -27,9 +27,18 @@ vfs_status_t vfs_mkdir(const char* name);
 vfs_status_t vfs_fab(const char* filename);
 vfs_status_t vfs_insp(const char* filename, const char** out_text);
 vfs_status_t vfs_carve(const char* filename, const char* text);
+
 vfs_status_t vfs_burn(const char* filename);
 vfs_status_t vfs_load(void);
 vfs_status_t vfs_save(void);
+
+vfs_status_t vfs_learn(const char* filename);
+vfs_status_t vfs_is_learned(const char* filename, int* out_learned);
+
 void vfs_shop(vfs_list_cb_t cb, void* user);
 int vfs_is_dirty(void);
 
+// Scripts
+typedef void (*vfs_spell_cb_t)(const char* name, void* user);
+
+void vfs_grimoire(vfs_spell_cb_t cb, void* user);

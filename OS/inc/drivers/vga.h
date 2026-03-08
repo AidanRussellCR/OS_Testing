@@ -7,6 +7,9 @@
 #define TERM_HEIGHT (VGA_HEIGHT - 2)
 #define OVERLAY_ROW0 (VGA_HEIGHT - 2)
 #define OVERLAY_ROW1 (VGA_HEIGHT - 1)
+#define TEXT_WIDTH (VGA_WIDTH - 1)
+#define SCROLLBAR_COL (VGA_WIDTH - 1)
+#define SCROLLBACK_ROWS 300
 
 void terminal_init(void);
 void terminal_clear(void);
@@ -16,6 +19,15 @@ void terminal_write(const char* s);
 void terminal_write_at(size_t row, size_t col, const char* s);
 void terminal_putc(char c);
 void terminal_putc_at(size_t row, size_t col, char c);
+
+size_t terminal_get_buffer_row(void);
+size_t terminal_get_view_top(void);
+
+void terminal_scroll_view_up(void);
+void terminal_scroll_view_down(void);
+void terminal_ensure_row_visible(size_t row);
+void terminal_follow_tail(void);
+int terminal_is_following_tail(void);
 
 size_t terminal_get_row(void);
 size_t terminal_get_col(void);
