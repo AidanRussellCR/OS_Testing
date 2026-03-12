@@ -16,7 +16,7 @@ Short Term Goals:
 Roadmap:
  1) Priority Scheduling/Multi-level Queue
  2) Search function for file system
- 3) Fork
+ 3) Fork (Orc)
 
 Interests/Goals that need more research:
  1) Compiler
